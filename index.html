@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Music Visualizer Pro</title>
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: black;
+  color: white;
+  text-align: center;
+}
+
+canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+
+.controls {
+  position: relative;
+  z-index: 10;
+  padding: 15px;
+  background: rgba(0,0,0,0.6);
+}
+
+input, button {
+  margin: 5px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="controls">
+  <h2>🎵 Music Visualizer</h2>
+
+  <input type="file" id="audioFile" accept="audio/*">
+  <input type="file" id="bgUpload" accept="image/*">
+
+  <br>
+
+  Color: <input type="color" id="colorPicker" value="#00ffff">
+  Bars: <input type="range" id="bars" min="32" max="256" value="128">
+
+  <br>
+
+  <button onclick="saveTemplate()">Save Template</button>
+  <button onclick="loadTemplate()">Load Template</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let audioCtx = new AudioContext();
+let analyser = audioCtx.createAnalyser();
+
+let source;
+let dataArray;
+
+let color = "#00ffff";
+let barCount = 128;
+let bgImage = null;
+
+// AUDIO LOAD
+document.getElementById("audioFile").addEventListener("change", function(e){
+  let file = e.target.files[0];
+  let audio = new Audio(URL.createObjectURL(file));
+  audio.play();
+
+  source = audioCtx.createMediaElementSource(audio);
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  analyser.fftSize = 256;
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+  animate();
+});
+
+// BACKGROUND IMAGE
+document.getElementById("bgUpload").addEventListener("change", function(e){
+  let file = e.target.files[0];
+  let reader = new FileReader();
+  reader.onload = function(){
+    bgImage = new Image();
+    bgImage.src = reader.result;
+  }
+  reader.readAsDataURL(file);
+});
+
+// COLOR
+document.getElementById("colorPicker").addEventListener("input", function(e){
+  color = e.target.value;
+});
+
+// BAR COUNT
+document.getElementById("bars").addEventListener("input", function(e){
+  barCount = e.target.value;
+});
+
+// TEMPLATE SAVE
+function saveTemplate(){
+  let template = {
+    color,
+    barCount,
+    bg: bgImage ? bgImage.src : null
+  };
+  localStorage.setItem("template", JSON.stringify(template));
+  alert("Saved!");
+}
+
+// TEMPLATE LOAD
+function loadTemplate(){
+  let t = JSON.parse(localStorage.getItem("template"));
+  if(!t) return;
+
+  color = t.color;
+  barCount = t.barCount;
+
+  if(t.bg){
+    bgImage = new Image();
+    bgImage.src = t.bg;
+  }
+
+  alert("Loaded!");
+}
+
+// ANIMATION
+function animate(){
+  requestAnimationFrame(animate);
+
+  analyser.getByteFrequencyData(dataArray);
+
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // BG IMAGE
+  if(bgImage){
+    ctx.drawImage(bgImage,0,0,canvas.width,canvas.height);
+  }
+
+  let barWidth = canvas.width / barCount;
+  
+  for(let i=0; i<barCount; i++){
+    let value = dataArray[i];
+    let height = value * 2;
+
+    ctx.fillStyle = color;
+    ctx.fillRect(i * barWidth, canvas.height - height, barWidth - 2, height);
+  }
+}
+</script>
+
+</body>
+</html>
