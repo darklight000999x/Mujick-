@@ -2,31 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Music Visualizer Pro</title>
+<title>Pro Visualizer Studio</title>
+
 <style>
 body {
-  margin: 0;
-  font-family: Arial;
-  background: black;
-  color: white;
-  text-align: center;
-}
-
-canvas {
-  position: fixed;
-  top: 0;
-  left: 0;
+  margin:0;
+  background:#000;
+  font-family:sans-serif;
+  color:white;
+  text-align:center;
 }
 
 .controls {
-  position: relative;
-  z-index: 10;
-  padding: 15px;
-  background: rgba(0,0,0,0.6);
+  position:fixed;
+  top:0;
+  width:100%;
+  background:#111;
+  padding:10px;
+  z-index:10;
 }
 
-input, button {
-  margin: 5px;
+canvas, video {
+  position:absolute;
+  top:0;
+  left:0;
+}
+
+input, button, select {
+  margin:4px;
 }
 </style>
 </head>
@@ -34,106 +37,144 @@ input, button {
 <body>
 
 <div class="controls">
-  <h2>🎵 Music Visualizer</h2>
 
-  <input type="file" id="audioFile" accept="audio/*">
-  <input type="file" id="bgUpload" accept="image/*">
+<input type="file" id="audio" accept="audio/*">
+<input type="file" id="bgImg" accept="image/*">
+<input type="file" id="bgVideo" accept="video/*">
 
-  <br>
+<br>
 
-  Color: <input type="color" id="colorPicker" value="#00ffff">
-  Bars: <input type="range" id="bars" min="32" max="256" value="128">
+Color <input type="color" id="color" value="#00ffff">
+Bars <input type="range" id="bars" min="32" max="256" value="128">
 
-  <br>
+<br>
 
-  <button onclick="saveTemplate()">Save Template</button>
-  <button onclick="loadTemplate()">Load Template</button>
+Size:
+<select id="size">
+<option value="1280x720">YouTube (16:9)</option>
+<option value="1080x1920">Shorts (9:16)</option>
+<option value="custom">Custom</option>
+</select>
+
+W <input type="number" id="w" value="1280">
+H <input type="number" id="h" value="720">
+
+<br>
+
+Timeline <input type="range" id="timeline" value="0" step="0.01">
+
+<br>
+
+<button onclick="startRec()">Start Record</button>
+<button onclick="stopRec()">Stop & Download</button>
+
 </div>
 
-<canvas id="canvas"></canvas>
+<video id="videoBg" loop muted></video>
+<canvas id="c"></canvas>
 
 <script>
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
 
 let audioCtx = new AudioContext();
 let analyser = audioCtx.createAnalyser();
 
+let audioEl = new Audio();
 let source;
+
 let dataArray;
+let color="#00ffff";
+let bars=128;
 
-let color = "#00ffff";
-let barCount = 128;
-let bgImage = null;
+let bgImg=null;
+let videoBg=document.getElementById("videoBg");
 
-// AUDIO LOAD
-document.getElementById("audioFile").addEventListener("change", function(e){
-  let file = e.target.files[0];
-  let audio = new Audio(URL.createObjectURL(file));
-  audio.play();
+let recorder, chunks=[];
 
-  source = audioCtx.createMediaElementSource(audio);
+// SIZE CONTROL
+function setSize(w,h){
+  canvas.width=w;
+  canvas.height=h;
+  videoBg.width=w;
+  videoBg.height=h;
+}
+setSize(1280,720);
+
+document.getElementById("size").onchange=(e)=>{
+  if(e.target.value==="custom") return;
+  let [w,h]=e.target.value.split("x");
+  setSize(w,h);
+}
+
+// AUDIO
+audio.onchange=e=>{
+  audioEl.src=URL.createObjectURL(e.target.files[0]);
+  audioEl.play();
+
+  source=audioCtx.createMediaElementSource(audioEl);
   source.connect(analyser);
   analyser.connect(audioCtx.destination);
 
-  analyser.fftSize = 256;
-  dataArray = new Uint8Array(analyser.frequencyBinCount);
+  analyser.fftSize=256;
+  dataArray=new Uint8Array(analyser.frequencyBinCount);
 
   animate();
-});
+};
 
-// BACKGROUND IMAGE
-document.getElementById("bgUpload").addEventListener("change", function(e){
-  let file = e.target.files[0];
-  let reader = new FileReader();
-  reader.onload = function(){
-    bgImage = new Image();
-    bgImage.src = reader.result;
+// BG IMAGE
+bgImgInput.onchange=e=>{
+  let r=new FileReader();
+  r.onload=()=>{
+    bgImg=new Image();
+    bgImg.src=r.result;
   }
-  reader.readAsDataURL(file);
-});
+  r.readAsDataURL(e.target.files[0]);
+};
 
-// COLOR
-document.getElementById("colorPicker").addEventListener("input", function(e){
-  color = e.target.value;
-});
+// BG VIDEO
+bgVideo.onchange=e=>{
+  videoBg.src=URL.createObjectURL(e.target.files[0]);
+  videoBg.play();
+};
 
-// BAR COUNT
-document.getElementById("bars").addEventListener("input", function(e){
-  barCount = e.target.value;
-});
+// COLOR + BARS
+color.oninput=e=>color=e.target.value;
+bars.oninput=e=>bars=e.target.value;
 
-// TEMPLATE SAVE
-function saveTemplate(){
-  let template = {
-    color,
-    barCount,
-    bg: bgImage ? bgImage.src : null
+// TIMELINE
+timeline.oninput=e=>{
+  audioEl.currentTime=e.target.value;
+};
+
+audioEl.ontimeupdate=()=>{
+  timeline.max=audioEl.duration;
+  timeline.value=audioEl.currentTime;
+};
+
+// RECORD
+function startRec(){
+  let stream=canvas.captureStream(30);
+  recorder=new MediaRecorder(stream);
+
+  recorder.ondataavailable=e=>chunks.push(e.data);
+
+  recorder.onstop=()=>{
+    let blob=new Blob(chunks,{type:"video/mp4"});
+    let a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="visualizer.mp4";
+    a.click();
   };
-  localStorage.setItem("template", JSON.stringify(template));
-  alert("Saved!");
+
+  recorder.start();
 }
 
-// TEMPLATE LOAD
-function loadTemplate(){
-  let t = JSON.parse(localStorage.getItem("template"));
-  if(!t) return;
-
-  color = t.color;
-  barCount = t.barCount;
-
-  if(t.bg){
-    bgImage = new Image();
-    bgImage.src = t.bg;
-  }
-
-  alert("Loaded!");
+function stopRec(){
+  recorder.stop();
 }
 
-// ANIMATION
+// DRAW
 function animate(){
   requestAnimationFrame(animate);
 
@@ -141,19 +182,24 @@ function animate(){
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // BG IMAGE
-  if(bgImage){
-    ctx.drawImage(bgImage,0,0,canvas.width,canvas.height);
+  // VIDEO BG
+  if(videoBg.src){
+    ctx.drawImage(videoBg,0,0,canvas.width,canvas.height);
   }
 
-  let barWidth = canvas.width / barCount;
-  
-  for(let i=0; i<barCount; i++){
-    let value = dataArray[i];
-    let height = value * 2;
+  // IMAGE BG
+  if(bgImg){
+    ctx.drawImage(bgImg,0,0,canvas.width,canvas.height);
+  }
 
-    ctx.fillStyle = color;
-    ctx.fillRect(i * barWidth, canvas.height - height, barWidth - 2, height);
+  let barWidth=canvas.width/bars;
+
+  for(let i=0;i<bars;i++){
+    let val=dataArray[i];
+    let h=val*2;
+
+    ctx.fillStyle=color;
+    ctx.fillRect(i*barWidth,canvas.height-h,barWidth-2,h);
   }
 }
 </script>
